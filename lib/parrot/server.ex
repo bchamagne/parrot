@@ -58,8 +58,8 @@ defmodule Parrot.Server do
     end
   end
 
-  @spec eat(pid(), String.t()) :: {:ok, String.t()} | {:error, :timeout}
-  @spec eat(pid(), String.t(), integer()) :: {:ok, String.t()} | {:error, :timeout}
+  @spec eat(pid(), atom()) :: {:ok, String.t()} | {:error, :timeout}
+  @spec eat(pid(), atom(), integer()) :: {:ok, String.t()} | {:error, :timeout}
   def eat(pid, food, millisec \\ 1_000) do
     ref = make_ref()
     from = self()
