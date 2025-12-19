@@ -2,6 +2,7 @@ defmodule ParrotTest do
   use ExUnit.Case
 
   @think_about_life_ms 100
+  @eat_ms 100
 
   test "Unnamed parrot repeat after me" do
     text = "Hello world!"
@@ -66,24 +67,24 @@ defmodule ParrotTest do
     assert time_microsec > @think_about_life_ms * 1000
   end
 
-  test "Thinking about life is a blocking operation" do
+  test "Thinking about life is a non-blocking operation" do
     pid = Parrot.start()
     test_pid = self()
 
     {time_microsec, _} =
       :timer.tc(fn ->
         spawn(fn ->
-          Parrot.think_about_life(pid, @think_about_life_ms)
+          {:ok, _} = Parrot.think_about_life(pid, @think_about_life_ms)
           send(test_pid, :done)
         end)
 
         spawn(fn ->
-          Parrot.think_about_life(pid, @think_about_life_ms)
+          {:ok, _} = Parrot.think_about_life(pid, @think_about_life_ms)
           send(test_pid, :done)
         end)
 
         spawn(fn ->
-          Parrot.think_about_life(pid, @think_about_life_ms)
+          {:ok, _} = Parrot.think_about_life(pid, @think_about_life_ms)
           send(test_pid, :done)
         end)
 
@@ -92,6 +93,35 @@ defmodule ParrotTest do
         assert_receive(:done, 1_000)
       end)
 
-    assert time_microsec > @think_about_life_ms * 1000 * 3
+    assert time_microsec < @think_about_life_ms * 1000 * 3
+  end
+
+  test "Eating is a blocking operation" do
+    pid = Parrot.start()
+    test_pid = self()
+
+    {time_microsec, _} =
+      :timer.tc(fn ->
+        spawn(fn ->
+          {:ok, _} = Parrot.eat(pid, :seed, @eat_ms)
+          send(test_pid, :done)
+        end)
+
+        spawn(fn ->
+          {:ok, _} = Parrot.eat(pid, :nut, @eat_ms)
+          send(test_pid, :done)
+        end)
+
+        spawn(fn ->
+          {:ok, _} = Parrot.eat(pid, :fruit, @eat_ms)
+          send(test_pid, :done)
+        end)
+
+        assert_receive(:done, 1_000)
+        assert_receive(:done, 1_000)
+        assert_receive(:done, 1_000)
+      end)
+
+    assert time_microsec > @eat_ms * 1000 * 3
   end
 end

@@ -1,6 +1,8 @@
 defmodule Parrot.Server do
   defstruct [:name]
 
+  @food_acceptable [:seed, :nut, :fruit, :vegetable]
+
   @quotes [
     {"Man is condemned to be free; because once thrown into the world, he is responsible for everything he does.",
      "Jean-Paul Sartre"},
@@ -56,6 +58,22 @@ defmodule Parrot.Server do
     end
   end
 
+  @spec eat(pid(), String.t()) :: {:ok, String.t()} | {:error, :timeout}
+  @spec eat(pid(), String.t(), integer()) :: {:ok, String.t()} | {:error, :timeout}
+  def eat(pid, food, millisec \\ 1_000) do
+    ref = make_ref()
+    from = self()
+    send(pid, {:eat, {from, ref}, food, millisec})
+
+    receive do
+      {:reply, ^ref, reply} ->
+        {:ok, reply}
+    after
+      millisec + 1_000 ->
+        {:error, :timeout}
+    end
+  end
+
   @spec think_about_life(pid()) :: {:ok, String.t()} | {:error, :timeout}
   @spec think_about_life(pid(), integer()) :: {:ok, String.t()} | {:error, :timeout}
   def think_about_life(pid, millisec \\ 5_000) do
@@ -88,10 +106,23 @@ defmodule Parrot.Server do
         send(from, {:reply, ref, "#{state.name} says: #{text}"})
         loop(state)
 
-      {:think_about_life, {from, ref}, time} ->
-        Process.sleep(time)
-        {quote_, author} = Enum.random(@quotes)
-        send(from, {:reply, ref, "#{state.name} says: #{quote_} - #{author}"})
+      {:eat, {from, ref}, food, millisec} ->
+        if food in @food_acceptable do
+          Process.sleep(millisec)
+          send(from, {:reply, ref, "#{state.name} says: Gochisousama deshita"})
+          loop(state)
+        else
+          send(from, {:reply, ref, "#{state.name} says: No way"})
+          loop(state)
+        end
+
+      {:think_about_life, {from, ref}, millisec} ->
+        spawn_link(fn ->
+          Process.sleep(millisec)
+          {quote_, author} = Enum.random(@quotes)
+          send(from, {:reply, ref, "#{state.name} says: #{quote_} - #{author}"})
+        end)
+
         loop(state)
 
       {:stop, {from, ref}} ->
