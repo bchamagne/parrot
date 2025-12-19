@@ -1,5 +1,5 @@
 defmodule Parrot.Server do
-  defstruct [:name]
+  defstruct [:name, :energy]
 
   @food_acceptable [:seed, :nut, :fruit, :vegetable]
 
@@ -16,16 +16,9 @@ defmodule Parrot.Server do
   ]
 
   # -- API --
-  @spec start() :: pid()
-  def start() do
-    spawn(__MODULE__, :init, [])
-  end
-
-  @spec start_named(atom()) :: pid()
-  def start_named(name) when is_atom(name) do
-    pid = spawn(__MODULE__, :init, [name])
-    Process.register(pid, name)
-    pid
+  @spec start(String.t()) :: pid()
+  def start(name) do
+    spawn(__MODULE__, :init, [name])
   end
 
   @spec stop(pid()) :: :ok | {:error, :timeout}
@@ -43,13 +36,16 @@ defmodule Parrot.Server do
     end
   end
 
-  @spec repeat(pid(), String.t()) :: {:ok, String.t()} | {:error, :timeout}
+  @spec repeat(pid(), String.t()) :: {:ok, String.t()} | {:error, :timeout | :unfed_parrot}
   def repeat(pid, text) when is_pid(pid) and is_binary(text) do
     ref = make_ref()
     from = self()
     send(pid, {:repeat, {from, ref}, text})
 
     receive do
+      {:reply, ^ref, :unfed_parrot} ->
+        {:error, :unfed_parrot}
+
       {:reply, ^ref, reply} ->
         {:ok, reply}
     after
@@ -67,6 +63,9 @@ defmodule Parrot.Server do
     send(pid, {:eat, {from, ref}, food, millisec})
 
     receive do
+      {:reply, ^ref, :unacceptable_food} ->
+        {:error, :unacceptable_food}
+
       {:reply, ^ref, reply} ->
         {:ok, reply}
     after
@@ -77,12 +76,16 @@ defmodule Parrot.Server do
 
   @spec think_about_life(pid()) :: {:ok, String.t()} | {:error, :timeout}
   @spec think_about_life(pid(), integer()) :: {:ok, String.t()} | {:error, :timeout}
-  def think_about_life(pid, millisec \\ 5_000) when is_pid(pid) and is_integer(millisec) do
+  def think_about_life(pid, millisec \\ 5_000)
+      when is_pid(pid) and is_integer(millisec) do
     ref = make_ref()
     from = self()
     send(pid, {:think_about_life, {from, ref}, millisec})
 
     receive do
+      {:reply, ^ref, :unfed_parrot} ->
+        {:error, :unfed_parrot}
+
       {:reply, ^ref, reply} ->
         {:ok, reply}
     after
@@ -93,41 +96,69 @@ defmodule Parrot.Server do
 
   # -- CALLBACKS --
 
-  def init() do
-    loop(%__MODULE__{name: "Le parrot inconnu"})
-  end
-
   def init(name) do
-    loop(%__MODULE__{name: name})
+    loop(%__MODULE__{name: name, energy: 0})
   end
 
   defp loop(state) do
     receive do
-      {:repeat, {from, ref}, text} ->
-        send(from, {:reply, ref, "#{state.name} says: #{text}"})
+      {:eat, {from, ref}, food, millisec} when food in @food_acceptable ->
+        new_state = do_increment_energy(state, food)
+        reply = do_eat_food(food, millisec)
+        send(from, {:reply, ref, "#{state.name} says: #{reply}"})
+        loop(new_state)
+
+      {:eat, {from, ref}, _food, _millisec} ->
+        send(from, {:reply, ref, :unacceptable_food})
         loop(state)
 
-      {:eat, {from, ref}, food, millisec} ->
-        if food in @food_acceptable do
-          Process.sleep(millisec)
-          send(from, {:reply, ref, "#{state.name} says: Gochisousama deshita"})
-          loop(state)
-        else
-          send(from, {:reply, ref, "#{state.name} says: No way"})
-          loop(state)
-        end
+      {:repeat, {from, ref}, text} when state.energy > 0 ->
+        new_state = do_consume_energy(state)
+        send(from, {:reply, ref, "#{state.name} says: #{do_repeat(text)}"})
+        loop(new_state)
 
-      {:think_about_life, {from, ref}, millisec} ->
+      {:repeat, {from, ref}, _text} ->
+        send(from, {:reply, ref, :unfed_parrot})
+        loop(state)
+
+      {:think_about_life, {from, ref}, millisec} when state.energy > 0 ->
+        new_state = do_consume_energy(state)
+
         spawn_link(fn ->
-          Process.sleep(millisec)
-          {quote_, author} = Enum.random(@quotes)
-          send(from, {:reply, ref, "#{state.name} says: #{quote_} - #{author}"})
+          send(from, {:reply, ref, "#{state.name} says: #{do_think_about_life(millisec)}"})
         end)
 
+        loop(new_state)
+
+      {:think_about_life, {from, ref}, _millisec} ->
+        send(from, {:reply, ref, :unfed_parrot})
         loop(state)
 
       {:stop, {from, ref}} ->
         send(from, {:reply, ref, :ok})
     end
+  end
+
+  defp do_increment_energy(state, _food) do
+    %__MODULE__{state | energy: state.energy + 1}
+  end
+
+  defp do_consume_energy(%__MODULE__{energy: energy} = state) when energy > 0 do
+    %__MODULE__{state | energy: energy - 1}
+  end
+
+  defp do_repeat(text) do
+    text
+  end
+
+  defp do_eat_food(_food, millisec) do
+    Process.sleep(millisec)
+    "Gochisousama deshita"
+  end
+
+  defp do_think_about_life(millisec) do
+    Process.sleep(millisec)
+    {quote_, author} = Enum.random(@quotes)
+    "#{quote_} - #{author}"
   end
 end

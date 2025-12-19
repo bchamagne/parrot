@@ -1,74 +1,53 @@
 defmodule ParrotTest do
-  use ExUnit.Case
+  use ExUnit.Case, async: true
 
   @think_about_life_ms 100
   @eat_ms 100
 
-  test "Unnamed parrot repeat after me" do
-    text = "Hello world!"
-    pid = Parrot.start()
+  test "Starting and stopping a parrot" do
+    pid = Parrot.start("Pickle")
     assert is_pid(pid)
     assert Process.alive?(pid)
-    assert {:ok, reply} = Parrot.repeat(pid, text)
-    assert reply =~ text
-
-    text = :crypto.strong_rand_bytes(32)
-    assert {:ok, reply} = Parrot.repeat(pid, text)
-    assert reply =~ text
-  end
-
-  test "Named parrot repeat after me" do
-    name = :alfred
-    pid = Parrot.start_named(name)
-    assert is_pid(pid)
-    assert name |> Process.whereis() |> Process.alive?()
-
-    text = "Hello world!"
-    assert {:ok, reply} = Parrot.repeat(name, text)
-    assert reply =~ text
-    assert reply =~ Atom.to_string(name)
-    text = :crypto.strong_rand_bytes(32)
-    assert {:ok, reply} = Parrot.repeat(name, text)
-    assert reply =~ text
-    assert reply =~ Atom.to_string(name)
-  end
-
-  test "Stop should work" do
-    pid = Parrot.start()
-    assert is_pid(pid)
-    Parrot.stop(pid)
+    assert :ok = Parrot.stop(pid)
     refute Process.alive?(pid)
-
-    name = :jane
-    pid = Parrot.start_named(name)
-    assert is_pid(pid)
-    assert Process.alive?(pid)
-
-    Parrot.stop(pid)
-    refute Process.alive?(pid)
-
-    name = :mike
-    _ = Parrot.start_named(name)
-    assert name |> Process.whereis() |> Process.alive?()
-
-    Parrot.stop(name)
-    assert is_nil(name |> Process.whereis())
   end
 
-  test "Thinking about life is a slow operation" do
-    pid = Parrot.start()
+  test "Unfed parrot will not do anything" do
+    pid = Parrot.start("Peanut")
+    assert {:error, :unfed_parrot} = Parrot.repeat(pid, "Hello, pretty bird!")
+    assert {:error, :unfed_parrot} = Parrot.think_about_life(pid)
+  end
 
-    {time_microsec, result} =
-      :timer.tc(fn ->
-        Parrot.think_about_life(pid, @think_about_life_ms)
-      end)
+  test "Feeding unacceptable food will fail" do
+    pid = Parrot.start("Pepper")
+    assert {:error, :unacceptable_food} = Parrot.eat(pid, :meat)
+    assert {:error, :unacceptable_food} = Parrot.eat(pid, :chocolate)
+    assert {:error, :unfed_parrot} = Parrot.repeat(pid, "Gimme a kiss!")
+    assert {:error, :unfed_parrot} = Parrot.think_about_life(pid)
+  end
 
-    assert {:ok, _} = result
-    assert time_microsec > @think_about_life_ms * 1000
+  test "Each food grand one action" do
+    pid = Parrot.start("Picasso")
+    assert {:ok, "Picasso says: Gochisousama deshita"} = Parrot.eat(pid, :seed, @eat_ms)
+    assert {:ok, "Picasso says: Whatcha doin'?"} = Parrot.repeat(pid, "Whatcha doin'?")
+    assert {:error, :unfed_parrot} = Parrot.repeat(pid, "Step up!")
+
+    assert {:ok, "Picasso says: Gochisousama deshita"} = Parrot.eat(pid, :seed, @eat_ms)
+    assert {:ok, "Picasso says: " <> _} = Parrot.think_about_life(pid, @think_about_life_ms)
+    assert {:error, :unfed_parrot} = Parrot.think_about_life(pid, @think_about_life_ms)
+
+    assert {:ok, "Picasso says: Gochisousama deshita"} = Parrot.eat(pid, :seed, @eat_ms)
+    assert {:ok, "Picasso says: Gochisousama deshita"} = Parrot.eat(pid, :seed, @eat_ms)
+    assert {:ok, "Picasso says: Good morning!"} = Parrot.repeat(pid, "Good morning!")
+    assert {:ok, "Picasso says: Want a treat?"} = Parrot.repeat(pid, "Want a treat?")
+    assert {:error, :unfed_parrot} = Parrot.repeat(pid, "Pretty bird, pretty bird!")
   end
 
   test "Thinking about life is a non-blocking operation" do
-    pid = Parrot.start()
+    pid = Parrot.start("Polly")
+    {:ok, _} = Parrot.eat(pid, :seed, @eat_ms)
+    {:ok, _} = Parrot.eat(pid, :seed, @eat_ms)
+    {:ok, _} = Parrot.eat(pid, :seed, @eat_ms)
     test_pid = self()
 
     {time_microsec, _} =
@@ -97,7 +76,7 @@ defmodule ParrotTest do
   end
 
   test "Eating is a blocking operation" do
-    pid = Parrot.start()
+    pid = Parrot.start("Paco")
     test_pid = self()
 
     {time_microsec, _} =

@@ -3,9 +3,7 @@ defmodule Parrot do
   Documentation for `Parrot`.
   """
 
-  defdelegate start(), to: Parrot.Server
-
-  defdelegate start_named(name), to: Parrot.Server
+  defdelegate start(name), to: Parrot.Server
 
   defdelegate stop(pid), to: Parrot.Server
 
