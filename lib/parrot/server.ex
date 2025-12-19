@@ -22,14 +22,14 @@ defmodule Parrot.Server do
   end
 
   @spec start_named(atom()) :: pid()
-  def start_named(name) do
+  def start_named(name) when is_atom(name) do
     pid = spawn(__MODULE__, :init, [name])
     Process.register(pid, name)
     pid
   end
 
   @spec stop(pid()) :: :ok | {:error, :timeout}
-  def stop(pid) do
+  def stop(pid) when is_pid(pid) do
     ref = make_ref()
     from = self()
     send(pid, {:stop, {from, ref}})
@@ -44,7 +44,7 @@ defmodule Parrot.Server do
   end
 
   @spec repeat(pid(), String.t()) :: {:ok, String.t()} | {:error, :timeout}
-  def repeat(pid, text) do
+  def repeat(pid, text) when is_pid(pid) and is_binary(text) do
     ref = make_ref()
     from = self()
     send(pid, {:repeat, {from, ref}, text})
@@ -60,7 +60,8 @@ defmodule Parrot.Server do
 
   @spec eat(pid(), atom()) :: {:ok, String.t()} | {:error, :timeout}
   @spec eat(pid(), atom(), integer()) :: {:ok, String.t()} | {:error, :timeout}
-  def eat(pid, food, millisec \\ 1_000) do
+  def eat(pid, food, millisec \\ 2_000)
+      when is_pid(pid) and is_atom(food) and is_integer(millisec) do
     ref = make_ref()
     from = self()
     send(pid, {:eat, {from, ref}, food, millisec})
@@ -76,7 +77,7 @@ defmodule Parrot.Server do
 
   @spec think_about_life(pid()) :: {:ok, String.t()} | {:error, :timeout}
   @spec think_about_life(pid(), integer()) :: {:ok, String.t()} | {:error, :timeout}
-  def think_about_life(pid, millisec \\ 5_000) do
+  def think_about_life(pid, millisec \\ 5_000) when is_pid(pid) and is_integer(millisec) do
     ref = make_ref()
     from = self()
     send(pid, {:think_about_life, {from, ref}, millisec})
