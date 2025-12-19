@@ -14,4 +14,7 @@ defmodule Parrot do
 
   @spec repeat(pid(), String.t()) :: {:ok, String.t()} | {:error, :timeout}
   defdelegate repeat(pid, text), to: Parrot.Server
+
+  @spec think_about_life(pid(), integer()) :: {:ok, String.t()} | {:error, :timeout}
+  defdelegate think_about_life(pid, millisec), to: Parrot.Server
 end

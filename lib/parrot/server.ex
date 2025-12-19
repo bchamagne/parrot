@@ -1,6 +1,18 @@
 defmodule Parrot.Server do
   defstruct [:name]
 
+  @quotes [
+    {"Man is condemned to be free; because once thrown into the world, he is responsible for everything he does.",
+     "Jean-Paul Sartre"},
+    {"The literal meaning of life is whatever you're doing that prevents you from killing yourself.",
+     "Albert Camus"},
+    {"We are our choices.", "Jean-Paul Sartre"},
+    {"Life has no meaning the moment you lose the illusion of being eternal.",
+     "Jean-Paul Sartre"},
+    {"The only way to deal with an unfree world is to become so absolutely free that your very existence is an act of rebellion.",
+     "Albert Camus"}
+  ]
+
   # -- API --
   @spec start() :: pid()
   def start() do
@@ -44,6 +56,22 @@ defmodule Parrot.Server do
     end
   end
 
+  @spec think_about_life(pid()) :: {:ok, String.t()} | {:error, :timeout}
+  @spec think_about_life(pid(), integer()) :: {:ok, String.t()} | {:error, :timeout}
+  def think_about_life(pid, millisec \\ 5_000) do
+    ref = make_ref()
+    from = self()
+    send(pid, {:think_about_life, {from, ref}, millisec})
+
+    receive do
+      {:reply, ^ref, reply} ->
+        {:ok, reply}
+    after
+      millisec + 1_000 ->
+        {:error, :timeout}
+    end
+  end
+
   # -- CALLBACKS --
 
   def init() do
@@ -58,6 +86,12 @@ defmodule Parrot.Server do
     receive do
       {:repeat, {from, ref}, text} ->
         send(from, {:reply, ref, "#{state.name} says: #{text}"})
+        loop(state)
+
+      {:think_about_life, {from, ref}, time} ->
+        Process.sleep(time)
+        {quote_, author} = Enum.random(@quotes)
+        send(from, {:reply, ref, "#{state.name} says: #{quote_} - #{author}"})
         loop(state)
 
       {:stop, {from, ref}} ->
