@@ -5,6 +5,7 @@
 
 ```
 mix deps.get
+mix test
 ```
 
 ## Run in development 
@@ -17,12 +18,10 @@ iex -S mix
 ## Manual tests
 
 ```
-pid = Parrot.start()
-Parrot.repeat(pid, "G'day!")
-```
-
-```
-Parrot.start_named(:alfred)
-Parrot.eat(:alfred, :nut)
-Parrot.think_about_life(:alfred)
+pid = Parrot.start("Poncho")
+Parrot.eat(pid, :nut)
+Parrot.repeat(pid, "Night night!")
+Parrot.repeat(pid, "Come here!")
+Parrot.eat(pid, :fruit)
+Parrot.think_about_life(pid)
 ```
