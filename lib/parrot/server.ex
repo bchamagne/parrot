@@ -4,8 +4,10 @@ defmodule Parrot.Server do
   @food_acceptable [:seed, :nut, :fruit, :vegetable]
 
   # -- API --
-  def start(name) do
-    :gen_statem.start(__MODULE__, [name], [])
+  def start(name) when is_binary(name) do
+    init_params = [name]
+    opts = []
+    :gen_statem.start(__MODULE__, init_params, opts)
   end
 
   def stop(pid) when is_pid(pid) do
@@ -17,6 +19,7 @@ defmodule Parrot.Server do
     :gen_statem.call(pid, {:repeat, text})
   end
 
+  @doc "millisec sert à accélérer les tests"
   def eat(pid, food, millisec \\ 2_000)
       when is_pid(pid) and is_atom(food) and is_integer(millisec) do
     :gen_statem.call(pid, {:eat, food, millisec})
@@ -25,11 +28,20 @@ defmodule Parrot.Server do
   # -- CALLBACKS --
 
   def init(name) do
-    {:ok, :hungry, %__MODULE__{name: name, energy: 0}}
+    {:ok, :hungry,
+     %__MODULE__{
+       name: name,
+       energy: 0
+     }}
   end
 
+  # state_functions: les événements sont traités par des fonctions qui ont le nom de l'état courant
+  # handle_event_function: tout est traité dans la fonction : handle_event/4
   def callback_mode, do: :state_functions
 
+  # ---------------
+  # STATE: HUNGRY
+  # ---------------
   def hungry({:call, from}, {:repeat, _text}, data) do
     {:keep_state, data, [reply(from, data, "Feed me first, human!")]}
   end
@@ -44,6 +56,9 @@ defmodule Parrot.Server do
     end
   end
 
+  # ---------------
+  # STATE: FED
+  # ---------------
   def fed({:call, from}, {:repeat, text}, data) do
     case do_consume_energy(data) do
       data when data.energy == 0 ->
@@ -59,6 +74,7 @@ defmodule Parrot.Server do
     {:keep_state, data, [reply(from, data, text)]}
   end
 
+  @doc "cette fonction fera planter le process plutôt que d'avoir une énergie négative"
   defp do_consume_energy(%__MODULE__{energy: energy} = data)
        when energy > 0 do
     %{data | energy: energy - 1}
