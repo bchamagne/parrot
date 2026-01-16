@@ -3,162 +3,77 @@ defmodule Parrot.Server do
 
   @food_acceptable [:seed, :nut, :fruit, :vegetable]
 
-  @quotes [
-    {"Man is condemned to be free; because once thrown into the world, he is responsible for everything he does.",
-     "Jean-Paul Sartre"},
-    {"The literal meaning of life is whatever you're doing that prevents you from killing yourself.",
-     "Albert Camus"},
-    {"We are our choices.", "Jean-Paul Sartre"},
-    {"Life has no meaning the moment you lose the illusion of being eternal.",
-     "Jean-Paul Sartre"},
-    {"The only way to deal with an unfree world is to become so absolutely free that your very existence is an act of rebellion.",
-     "Albert Camus"}
-  ]
-
   # -- API --
-  @spec start(String.t()) :: pid()
   def start(name) do
-    spawn(__MODULE__, :init, [name])
+    :gen_statem.start(__MODULE__, [name], [])
   end
 
-  @spec stop(pid()) :: :ok | {:error, :timeout}
   def stop(pid) when is_pid(pid) do
-    ref = make_ref()
-    from = self()
-    send(pid, {:stop, {from, ref}})
-
-    receive do
-      {:reply, ^ref, :ok} ->
-        :ok
-    after
-      1000 ->
-        {:error, :timeout}
-    end
+    :gen_statem.stop(pid)
   end
 
-  @spec repeat(pid(), String.t()) :: {:ok, String.t()} | {:error, :timeout | :unfed_parrot}
-  def repeat(pid, text) when is_pid(pid) and is_binary(text) do
-    ref = make_ref()
-    from = self()
-    send(pid, {:repeat, {from, ref}, text})
-
-    receive do
-      {:reply, ^ref, :unfed_parrot} ->
-        {:error, :unfed_parrot}
-
-      {:reply, ^ref, reply} ->
-        {:ok, reply}
-    after
-      1000 ->
-        {:error, :timeout}
-    end
+  def repeat(pid, text)
+      when is_pid(pid) and is_binary(text) do
+    :gen_statem.call(pid, {:repeat, text})
   end
 
-  @spec eat(pid(), atom()) :: {:ok, String.t()} | {:error, :timeout}
-  @spec eat(pid(), atom(), integer()) :: {:ok, String.t()} | {:error, :timeout}
   def eat(pid, food, millisec \\ 2_000)
       when is_pid(pid) and is_atom(food) and is_integer(millisec) do
-    ref = make_ref()
-    from = self()
-    send(pid, {:eat, {from, ref}, food, millisec})
-
-    receive do
-      {:reply, ^ref, :unacceptable_food} ->
-        {:error, :unacceptable_food}
-
-      {:reply, ^ref, reply} ->
-        {:ok, reply}
-    after
-      millisec + 1_000 ->
-        {:error, :timeout}
-    end
-  end
-
-  @spec think_about_life(pid()) :: {:ok, String.t()} | {:error, :timeout}
-  @spec think_about_life(pid(), integer()) :: {:ok, String.t()} | {:error, :timeout}
-  def think_about_life(pid, millisec \\ 5_000)
-      when is_pid(pid) and is_integer(millisec) do
-    ref = make_ref()
-    from = self()
-    send(pid, {:think_about_life, {from, ref}, millisec})
-
-    receive do
-      {:reply, ^ref, :unfed_parrot} ->
-        {:error, :unfed_parrot}
-
-      {:reply, ^ref, reply} ->
-        {:ok, reply}
-    after
-      millisec + 1_000 ->
-        {:error, :timeout}
-    end
+    :gen_statem.call(pid, {:eat, food, millisec})
   end
 
   # -- CALLBACKS --
 
   def init(name) do
-    loop(%__MODULE__{name: name, energy: 0})
+    {:ok, :hungry, %__MODULE__{name: name, energy: 0}}
   end
 
-  defp loop(state) do
-    receive do
-      {:eat, {from, ref}, food, millisec} when food in @food_acceptable ->
-        new_state = do_increment_energy(state, food)
-        reply = do_eat_food(food, millisec)
-        send(from, {:reply, ref, "#{state.name} says: #{reply}"})
-        loop(new_state)
+  def callback_mode, do: :state_functions
 
-      {:eat, {from, ref}, _food, _millisec} ->
-        send(from, {:reply, ref, :unacceptable_food})
-        loop(state)
+  def hungry({:call, from}, {:repeat, _text}, data) do
+    {:keep_state, data, [reply(from, data, "Feed me first, human!")]}
+  end
 
-      {:repeat, {from, ref}, text} when state.energy > 0 ->
-        new_state = do_consume_energy(state)
-        send(from, {:reply, ref, "#{state.name} says: #{do_repeat(text)}"})
-        loop(new_state)
+  def hungry({:call, from}, {:eat, food, millisec}, data) do
+    {data, text} = do_eat_food(data, food, millisec)
 
-      {:repeat, {from, ref}, _text} ->
-        send(from, {:reply, ref, :unfed_parrot})
-        loop(state)
-
-      {:think_about_life, {from, ref}, millisec} when state.energy > 0 ->
-        new_state = do_consume_energy(state)
-
-        spawn_link(fn ->
-          send(from, {:reply, ref, "#{state.name} says: #{do_think_about_life(millisec)}"})
-        end)
-
-        loop(new_state)
-
-      {:think_about_life, {from, ref}, _millisec} ->
-        send(from, {:reply, ref, :unfed_parrot})
-        loop(state)
-
-      {:stop, {from, ref}} ->
-        send(from, {:reply, ref, :ok})
+    if data.energy > 0 do
+      {:next_state, :fed, data, [reply(from, data, text)]}
+    else
+      {:keep_state, data, [reply(from, data, text)]}
     end
   end
 
-  defp do_increment_energy(state, _food) do
-    %__MODULE__{state | energy: state.energy + 1}
+  def fed({:call, from}, {:repeat, text}, data) do
+    case do_consume_energy(data) do
+      data when data.energy == 0 ->
+        {:next_state, :hungry, data, [reply(from, data, text)]}
+
+      data ->
+        {:keep_state, data, [reply(from, data, text)]}
+    end
   end
 
-  defp do_consume_energy(%__MODULE__{energy: energy} = state) when energy > 0 do
-    %__MODULE__{state | energy: energy - 1}
+  def fed({:call, from}, {:eat, food, millisec}, data) do
+    {data, text} = do_eat_food(data, food, millisec)
+    {:keep_state, data, [reply(from, data, text)]}
   end
 
-  defp do_repeat(text) do
-    text
+  defp do_consume_energy(%__MODULE__{energy: energy} = data)
+       when energy > 0 do
+    %{data | energy: energy - 1}
   end
 
-  defp do_eat_food(_food, millisec) do
+  defp do_eat_food(%__MODULE__{} = data, food, millisec)
+       when food in @food_acceptable do
     Process.sleep(millisec)
-    "Gochisousama deshita"
+    data = %{data | energy: data.energy + 1}
+    {data, "Gochisousama deshita"}
   end
 
-  defp do_think_about_life(millisec) do
-    Process.sleep(millisec)
-    {quote_, author} = Enum.random(@quotes)
-    "#{quote_} - #{author}"
+  defp do_eat_food(data, _food, _millisec), do: {data, "Not eating that!"}
+
+  defp reply(from, %__MODULE__{} = data, text) do
+    {:reply, from, "#{data.name} says: #{text}"}
   end
 end
