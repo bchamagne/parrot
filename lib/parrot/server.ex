@@ -27,6 +27,7 @@ defmodule Parrot.Server do
 
   # -- CALLBACKS --
 
+  @doc "Initie le perroquet dans l'état hungry avec son nom et 0 d'énergie"
   def init(name) do
     {:ok, :hungry,
      %__MODULE__{
@@ -35,8 +36,11 @@ defmodule Parrot.Server do
      }}
   end
 
-  # state_functions: les événements sont traités par des fonctions qui ont le nom de l'état courant
-  # handle_event_function: tout est traité dans la fonction : handle_event/4
+  # gen_statem a 2 modes de fonctionnement:
+  #   state_functions: les événements sont traités par des fonctions qui ont le nom de l'état courant
+  #   handle_event_function: tout est traité dans la fonction : handle_event/4
+  #
+  # j'ai choisi state_functions car je trouve ce mode plus lisible
   def callback_mode, do: :state_functions
 
   # ---------------
@@ -74,7 +78,9 @@ defmodule Parrot.Server do
     {:keep_state, data, [reply(from, data, text)]}
   end
 
-  @doc "cette fonction fera planter le process plutôt que d'avoir une énergie négative"
+  # -- INTERNALS --
+
+  # cette fonction fera planter le process plutôt que d'avoir une énergie négative
   defp do_consume_energy(%__MODULE__{energy: energy} = data)
        when energy > 0 do
     %{data | energy: energy - 1}
